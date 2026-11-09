@@ -1,0 +1,8 @@
+vault_ntfy_auth_users:
+  - "temper:CHANGE_ME_BCRYPT_HASH:user"
+  - "subscriber:CHANGE_ME_BCRYPT_HASH:user"
+
+vault_ntfy_auth_tokens:
+  - "temper:CHANGE_ME_TOKEN:temper sensor"
+
+vault_cloudflare_api_token: "CHANGE_ME"

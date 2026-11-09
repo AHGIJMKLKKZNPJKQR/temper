@@ -1,0 +1,212 @@
+- name: Configure ntfy server
+  hosts: ntfy
+  become: true
+
+  vars:
+    ntfy_listen: 127.0.0.1:2586
+    acme_sh_dir: "/opt/acme.sh-{{ acme_sh_version }}"
+    acme_sh_config_dir: /var/lib/acme.sh
+    acme_sh_env_file: "{{ acme_sh_config_dir }}/cloudflare.env"
+    acme_sh_cmd: "{{ acme_sh_dir }}/acme.sh --home {{ acme_sh_dir }} --config-home {{ acme_sh_config_dir }}"
+    acme_sh_fullchain: "{{ acme_sh_config_dir }}/{{ ntfy_domain }}_ecc/fullchain.cer"
+    tls_dir: /etc/nginx/tls
+    tls_key: "{{ tls_dir }}/{{ ntfy_domain }}.key"
+    tls_fullchain: "{{ tls_dir }}/{{ ntfy_domain }}.crt"
+    cloudflare_ips: "{{ cloudflare_ranges.results | map(attribute='content') | map('split') | flatten }}"
+
+  handlers:
+    - name: Reload crowdsec
+      ansible.builtin.systemd_service:
+        name: crowdsec
+        state: reloaded
+
+    - name: Restart ntfy
+      ansible.builtin.systemd_service:
+        name: ntfy
+        state: restarted
+
+    - name: Reload nginx
+      ansible.builtin.systemd_service:
+        name: nginx
+        state: reloaded
+
+  tasks:
+    - name: Add apt signing keys
+      ansible.builtin.get_url:
+        url: "{{ item.url }}"
+        dest: "/etc/apt/keyrings/{{ item.file }}"
+        mode: "0644"
+      loop:
+        - { file: ntfy.gpg, url: "https://archive.ntfy.sh/apt/keyring.gpg" }
+        - { file: crowdsec.asc, url: "https://packagecloud.io/crowdsec/crowdsec/gpgkey" }
+
+    - name: Add apt repositories
+      ansible.builtin.copy:
+        dest: "/etc/apt/sources.list.d/{{ item.name }}.list"
+        content: "deb [signed-by=/etc/apt/keyrings/{{ item.key }}] {{ item.repo }}\n"
+        mode: "0644"
+      loop:
+        - { name: ntfy, key: ntfy.gpg, repo: "https://archive.ntfy.sh/apt stable main" }
+        - { name: crowdsec, key: crowdsec.asc, repo: "https://packagecloud.io/crowdsec/crowdsec/any any main" }
+      register: apt_repos
+
+    - name: Update apt cache for new repositories
+      ansible.builtin.apt:
+        update_cache: true
+      when: apt_repos.changed
+
+    - name: Install packages
+      ansible.builtin.apt:
+        name: [nginx, ntfy, ufw, curl, openssl]
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Install CrowdSec
+      ansible.builtin.apt:
+        name: crowdsec
+
+    - name: Install CrowdSec firewall bouncer
+      ansible.builtin.apt:
+        name: crowdsec-firewall-bouncer-nftables
+
+    - name: Install CrowdSec collections
+      ansible.builtin.command: cscli collections install crowdsecurity/linux crowdsecurity/sshd crowdsecurity/nginx
+      register: cscli_collections
+      changed_when: "'Nothing to install or remove' not in cscli_collections.stdout + cscli_collections.stderr"
+      notify: Reload crowdsec
+
+    - name: Enable CrowdSec and firewall bouncer
+      ansible.builtin.systemd_service:
+        name: "{{ item }}"
+        enabled: true
+        state: started
+      loop: [crowdsec, crowdsec-firewall-bouncer]
+
+    - name: Allow SSH and HTTPS
+      community.general.ufw:
+        rule: allow
+        port: "{{ item }}"
+        proto: tcp
+      loop: ["22", "443"]
+
+    - name: Deny other incoming traffic
+      community.general.ufw:
+        default: deny
+        direction: incoming
+
+    - name: Enable ufw
+      community.general.ufw:
+        state: enabled
+
+    - name: Configure ntfy
+      ansible.builtin.template:
+        src: server.yml.j2
+        dest: /etc/ntfy/server.yml
+        owner: root
+        group: ntfy
+        mode: "0640"
+      notify: Restart ntfy
+
+    - name: Enable ntfy
+      ansible.builtin.systemd_service:
+        name: ntfy
+        enabled: true
+        state: started
+
+    - name: Install acme.sh
+      ansible.builtin.unarchive:
+        src: "https://github.com/acmesh-official/acme.sh/archive/refs/tags/{{ acme_sh_version }}.tar.gz"
+        dest: /opt
+        remote_src: true
+        creates: "{{ acme_sh_dir }}/acme.sh"
+
+    - name: Create acme.sh config directory
+      ansible.builtin.file:
+        path: "{{ acme_sh_config_dir }}"
+        state: directory
+        mode: "0700"
+
+    - name: Add Cloudflare credentials for acme.sh
+      ansible.builtin.copy:
+        dest: "{{ acme_sh_env_file }}"
+        content: |
+          CF_Token={{ cloudflare_api_token }}
+          CF_Account_ID={{ cloudflare_account_id }}
+        mode: "0600"
+
+    - name: Issue certificate
+      ansible.builtin.shell: >-
+        set -a && . {{ acme_sh_env_file }} && set +a &&
+        exec {{ acme_sh_cmd }} --issue -d {{ ntfy_domain }} --server {{ acme_sh_server }} --dns dns_cf
+      register: acme_issue
+      changed_when: acme_issue.rc == 0
+      failed_when: acme_issue.rc not in [0, 2]
+
+    - name: Create TLS directory
+      ansible.builtin.file:
+        path: "{{ tls_dir }}"
+        state: directory
+        mode: "0700"
+
+    - name: Read issued and installed certificates
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop: ["{{ acme_sh_fullchain }}", "{{ tls_fullchain }}"]
+      register: certs
+
+    - name: Install certificate for nginx
+      ansible.builtin.command: >-
+        {{ acme_sh_cmd }} --install-cert -d {{ ntfy_domain }}
+        --key-file {{ tls_key }} --fullchain-file {{ tls_fullchain }}
+        --reloadcmd "systemctl try-reload-or-restart nginx"
+      when: certs.results[0].stat.checksum != (certs.results[1].stat.checksum | default(''))
+
+    - name: Add acme.sh renewal service
+      ansible.builtin.template:
+        src: acme-sh-renew.service.j2
+        dest: /etc/systemd/system/acme-sh-renew.service
+        mode: "0644"
+
+    - name: Add acme.sh renewal timer
+      ansible.builtin.copy:
+        src: acme-sh-renew.timer
+        dest: /etc/systemd/system/acme-sh-renew.timer
+        mode: "0644"
+
+    - name: Enable acme.sh renewal timer
+      ansible.builtin.systemd_service:
+        name: acme-sh-renew.timer
+        enabled: true
+        state: started
+        daemon_reload: true
+
+    - name: Remove default nginx site
+      ansible.builtin.file:
+        path: /etc/nginx/sites-enabled/default
+        state: absent
+      notify: Reload nginx
+
+    - name: Fetch Cloudflare IP ranges
+      ansible.builtin.uri:
+        url: "https://www.cloudflare.com/ips-{{ item }}"
+        return_content: true
+      loop: [v4, v6]
+      register: cloudflare_ranges
+      check_mode: false
+
+    - name: Configure nginx
+      ansible.builtin.template:
+        src: ntfy.nginx.conf.j2
+        dest: /etc/nginx/conf.d/ntfy.conf
+        mode: "0644"
+      notify: Reload nginx
+
+    - name: Validate nginx configuration
+      ansible.builtin.command: nginx -t
+      changed_when: false
+
+    - name: Enable nginx
+      ansible.builtin.systemd_service:
+        name: nginx
+        enabled: true
+        state: started

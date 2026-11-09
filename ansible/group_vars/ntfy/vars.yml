@@ -1,0 +1,15 @@
+ntfy_domain: gnatfatcat.stream
+
+acme_sh_version: "3.1.6"
+acme_sh_server: letsencrypt
+
+cloudflare_account_id: 2f33ae17803b354311797953e380792c
+cloudflare_api_token: "{{ vault_cloudflare_api_token }}"
+
+ntfy_auth_users: "{{ vault_ntfy_auth_users }}"
+ntfy_auth_tokens: "{{ vault_ntfy_auth_tokens }}"
+ntfy_auth_access:
+  - "temper:temperature:wo"
+  - "temper:heartbeat:wo"
+  - "subscriber:temperature:ro"
+  - "subscriber:heartbeat:ro"

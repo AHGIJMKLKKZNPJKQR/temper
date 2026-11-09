@@ -1,0 +1,5 @@
+ntfy:
+  hosts:
+    ntfy-vm:
+      ansible_host: 35.237.155.167
+      ansible_user: agartardigrade

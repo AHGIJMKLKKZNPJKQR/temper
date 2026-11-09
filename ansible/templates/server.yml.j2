@@ -1,0 +1,11 @@
+base-url: "https://{{ ntfy_domain }}"
+listen-http: "{{ ntfy_listen }}"
+behind-proxy: true
+
+cache-file: /var/cache/ntfy/cache.db
+
+auth-file: /var/lib/ntfy/user.db
+auth-default-access: deny-all
+auth-users: {{ ntfy_auth_users | to_json }}
+auth-access: {{ ntfy_auth_access | to_json }}
+auth-tokens: {{ ntfy_auth_tokens | to_json }}

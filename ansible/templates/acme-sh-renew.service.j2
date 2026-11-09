@@ -1,0 +1,9 @@
+[Unit]
+Description=Renew TLS certificates with acme.sh
+Wants=network-online.target
+After=network-online.target nginx.service
+
+[Service]
+Type=oneshot
+EnvironmentFile={{ acme_sh_env_file }}
+ExecStart={{ acme_sh_cmd }} --cron
