@@ -10,7 +10,7 @@ pub fn main(init: std.process.Init) !void {
     const io = init.io;
     const gpa = init.gpa;
 
-    const cfg = try config.readConfigFromEnv(init.environ_map, io);
+    const cfg = try config.readConfigFromEnv(init.environ_map, io, gpa);
     const sensor_file = sensor.setupSensor(cfg, io) catch |err| {
         std.log.err("failed to setup sensor: {}", .{err});
         return err;
@@ -22,7 +22,7 @@ pub fn main(init: std.process.Init) !void {
     const notifier: notify.Notifier = .{
         .http_client = &http_client,
         .base_url = cfg.ntfy_url,
-        .token = cfg.ntfy_token,
+        .auth = cfg.ntfy_auth,
     };
 
     while (true) {

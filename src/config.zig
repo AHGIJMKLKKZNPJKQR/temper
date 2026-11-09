@@ -1,5 +1,6 @@
 const std = @import("std");
 
+const Allocator = std.mem.Allocator;
 const Uri = std.Uri;
 const Io = std.Io;
 const Dir = Io.Dir;
@@ -11,13 +12,16 @@ pub const Config = struct {
     min_temperature_mc: i32,
     max_temperature_mc: i32,
     ntfy_url: Uri,
-    ntfy_token: []const u8,
+    ntfy_auth: []const u8,
     sensor_directory: Dir,
 };
 
-pub fn readConfigFromEnv(env_map: *Environ.Map, io: Io) !Config {
+pub fn readConfigFromEnv(env_map: *Environ.Map, io: Io, gpa: Allocator) !Config {
     const heartbeat_fails_before_alert = try readInt(u32, env_map, "TMP_HEARTBEAT_FAILS_BEFORE_ALERT", 20);
     std.debug.assert(heartbeat_fails_before_alert > 0);
+
+    const ntfy_token = try requiredEnv(env_map, "TMP_NTFY_TOKEN");
+    const ntfy_auth = try gpa.print("Bearer {s}", .{ntfy_token});
 
     return .{
         .poll_interval_ms = try readInt(u32, env_map, "TMP_POLL_INTERVAL_MS", 15_000),
@@ -25,7 +29,7 @@ pub fn readConfigFromEnv(env_map: *Environ.Map, io: Io) !Config {
         .min_temperature_mc = try readInt(i32, env_map, "TMP_MIN_TEMPERATURE_MC", 3_000),
         .max_temperature_mc = try readInt(i32, env_map, "TMP_MAX_TEMPERATURE_MC", 7_000),
         .ntfy_url = try Uri.parse(try requiredEnv(env_map, "TMP_NTFY_URL")),
-        .ntfy_token = try requiredEnv(env_map, "TMP_NTFY_TOKEN"),
+        .ntfy_auth = ntfy_auth,
         .sensor_directory = try Dir.openDirAbsolute(io, try requiredEnv(env_map, "TMP_SENSOR_DIRECTORY"), .{}),
     };
 }

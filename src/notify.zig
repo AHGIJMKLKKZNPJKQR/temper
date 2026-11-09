@@ -10,7 +10,7 @@ const Duration = Io.Duration;
 pub const Notifier = struct {
     http_client: *http.Client,
     base_url: Uri,
-    token: []const u8,
+    auth: []const u8,
 };
 
 pub const Notification = union(enum) {
@@ -22,7 +22,7 @@ pub fn sendHeartbeat(notifier: Notifier, offset: Duration) !void {
     return ntfyReq(notifier.http_client, .{
         .priority = NtfyPriority.HIGH,
         .base_url = notifier.base_url,
-        .token = notifier.token,
+        .auth = notifier.auth,
         .topic = "heartbeat",
         .title = "Heartbeat missed!",
         .body = "Stopped receiving heartbeat!",
@@ -54,7 +54,7 @@ pub fn maybeSendTemperatureAlert(notifier: Notifier, min_mc: i32, max_mc: i32, a
     return ntfyReq(notifier.http_client, .{
         .priority = NtfyPriority.URGENT,
         .base_url = notifier.base_url,
-        .token = notifier.token,
+        .auth = notifier.auth,
         .topic = "temperature",
         .title = "Temperature outside range!",
         .body = body,
@@ -84,7 +84,7 @@ const NtfyPriority = enum {
 const NtfyParams = struct {
     priority: NtfyPriority,
     base_url: Uri,
-    token: []const u8,
+    auth: []const u8,
     topic: []const u8,
     title: []const u8,
     body: []const u8,
@@ -138,6 +138,7 @@ fn ntfyReq(client: *http.Client, params: NtfyParams) !void {
         .method = http.Method.POST,
         .location = .{ .uri = toLocation(params, &location_buf) },
         .payload = params.body,
+        .headers = .{ .authorization = .{ .override = params.auth } },
         .extra_headers = extra_headers[0..headers_len],
     });
     if (result.status.class() != http.Status.Class.success) {
