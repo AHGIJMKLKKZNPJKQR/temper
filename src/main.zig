@@ -45,6 +45,6 @@ pub fn main(init: std.process.Init) !void {
             std.log.warn("failed to send heartbeat: {}", .{err});
         };
 
-        try Io.sleep(io, .fromSeconds(cfg.poll_interval_ms), Io.Clock.awake);
+        try Io.sleep(io, .fromMilliseconds(cfg.poll_interval_ms), Io.Clock.awake);
     }
 }
