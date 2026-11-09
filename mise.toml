@@ -2,3 +2,8 @@
 uv = "0.12.13"
 ansible = "14.5.0"
 zig = "0.17.1"
+
+[tasks.deploy]
+dir = "{{config_root}}/ansible"
+run = "ansible-playbook playbook.yml --ask-vault-pass"
+raw = true
