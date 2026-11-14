@@ -25,25 +25,31 @@ pub fn main(init: std.process.Init) !void {
         .auth = cfg.ntfy_auth,
     };
 
-    while (true) {
-        const temperature_mc = sensor.readTemperatureMilliCelsius(sensor_file, io) catch |err| {
-            std.log.warn("failed to read temperature: {}", .{err});
-            continue;
-        };
+    var rolling_average_mc = @divFloor(cfg.min_temperature_mc + cfg.max_temperature_mc, 2);
 
-        notify.maybeSendTemperatureAlert(
-            notifier,
-            temperature_mc,
-            cfg.min_temperature_mc,
-            cfg.max_temperature_mc,
-        ) catch |err| {
-            std.log.warn("failed to send notification: {}", .{err});
-            continue;
-        };
-        // only send heartbeat when reading succeeded
-        notify.sendHeartbeat(notifier, .fromMilliseconds(cfg.poll_interval_ms * cfg.heartbeat_fails_before_alert)) catch |err| {
-            std.log.warn("failed to send heartbeat: {}", .{err});
-        };
+    while (true) {
+        read_blk: {
+            const temperature_mc = sensor.readTemperatureMilliCelsius(sensor_file, io) catch |err| {
+                std.log.warn("failed to read temperature: {}", .{err});
+                break :read_blk;
+            };
+            rolling_average_mc = @divFloor(rolling_average_mc + 2 * temperature_mc, 3);
+            std.log.info("read temperature: {}, updated average: {}", .{ temperature_mc, rolling_average_mc });
+
+            notify.maybeSendTemperatureAlert(
+                notifier,
+                cfg.min_temperature_mc,
+                cfg.max_temperature_mc,
+                rolling_average_mc,
+            ) catch |err| {
+                std.log.warn("failed to send notification: {}", .{err});
+                continue;
+            };
+            // only send heartbeat when reading and sending succeeded
+            notify.sendHeartbeat(notifier, .fromMilliseconds(cfg.poll_interval_ms * cfg.heartbeat_fails_before_alert)) catch |err| {
+                std.log.warn("failed to send heartbeat: {}", .{err});
+            };
+        }
 
         try Io.sleep(io, .fromMilliseconds(cfg.poll_interval_ms), Io.Clock.awake);
     }

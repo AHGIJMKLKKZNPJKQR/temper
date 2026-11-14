@@ -52,7 +52,7 @@ pub fn maybeSendTemperatureAlert(notifier: Notifier, min_mc: i32, max_mc: i32, a
         );
 
     return ntfyReq(notifier.http_client, .{
-        .priority = NtfyPriority.URGENT,
+        .priority = NtfyPriority.HIGH,
         .base_url = notifier.base_url,
         .auth = notifier.auth,
         .topic = "temperature",
