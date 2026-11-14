@@ -7,3 +7,6 @@ zig = "0.17.1"
 dir = "{{config_root}}/ansible"
 run = "ansible-playbook playbook.yml --ask-vault-pass"
 raw = true
+
+[tasks.build-pi]
+run = "zig build -Drelease -Dtarget=arm-linux-musleabihf -Dcpu=arm1176jzf_s"

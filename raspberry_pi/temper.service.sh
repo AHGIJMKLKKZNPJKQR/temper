@@ -3,7 +3,6 @@
 description="Temperature monitor with ntfy alerts"
 
 command="/usr/local/bin/temper"
-command_user="agarpi:agarpi"
 supervisor="supervise-daemon"
 respawn_delay=5
 output_log="/var/log/temper.log"

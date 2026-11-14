@@ -1,0 +1,10 @@
+#!/bin/sh
+#MISE depends=["build-pi"]
+set -eu
+
+scp zig-out/bin/temper raspberry_pi/temper.service.sh root@agarpi.local:/tmp/
+ssh root@agarpi.local 'set -e
+install -m 0755 /tmp/temper /usr/local/bin/temper
+install -m 0755 /tmp/temper.service.sh /etc/init.d/temper
+rc-update add temper default
+rc-service temper restart'
